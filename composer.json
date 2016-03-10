@@ -1,0 +1,28 @@
+{
+    "name": "exceptor/exceptor",
+    "type": "library",
+    "description": "A PHP client for the Exceptor error handler",
+    "keywords": ["log", "logging"],
+    "homepage": "http://exceptor.io",
+    "license": "BSD-3-Clause",
+    "authors": [
+        {
+            "name": "Dave Blencowe",
+            "email": "dblencowe@gmail.com"
+        }
+    ],
+    "require-dev": {
+    },
+    "require": {
+        "php": ">=5.2.4",
+        "ext-curl": "*"
+    },
+    "bin": [
+        "bin/exceptor"
+    ],
+    "autoload": {
+        "psr-0" : {
+            "Exceptor_" : "lib/"
+        }
+    }
+}
