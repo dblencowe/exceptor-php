@@ -43,7 +43,7 @@ class Exceptor_HandleError
 		$this->registerHandlers();
 	}
 
-	public function handleException($e, $isError = false, $vars = null)
+	public function handleException($e)
 	{
 		// Init the cUrl handler
 		$this->curlHandler = new Exceptor_CurlHandler();

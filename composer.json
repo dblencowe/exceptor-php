@@ -17,9 +17,6 @@
         "php": ">=5.2.4",
         "ext-curl": "*"
     },
-    "bin": [
-        "bin/exceptor"
-    ],
     "autoload": {
         "psr-0" : {
             "Exceptor_" : "lib/"
