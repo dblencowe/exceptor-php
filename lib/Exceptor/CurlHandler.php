@@ -1,117 +1,89 @@
 <?php
-/*
- * This file is part of Exceptor.
- *
- * (c) Sentry Team
- *
- * For the full copyright and license information, please view the LICENSE
- * file that was distributed with this source code.
- */
 
-/**
- * Asynchronous Curl connection manager.
- *
- * @package exceptor
- */
-
-// TODO(dcramer): handle ca_cert
 class Exceptor_CurlHandler
 {
-    private $join_timeout;
-    private $multi_handle;
-    private $options;
-    private $requests;
+	private $joinTimeout, $multiHandle, $requests;
 
-    public function __construct($options, $join_timeout=5)
-    {
-        $this->options = $options;
-        $this->multi_handle = curl_multi_init();
-        $this->requests = array();
-        $this->join_timeout = 5;
+	public function __construct($joinTimeout = 10)
+	{
+		$this->multiHandle = curl_multi_init();
+		$this->requests = [];
+		$this->joinTimeout = $joinTimeout;
 
-        register_shutdown_function(array($this, 'join'));
-    }
+		register_shutdown_function([$this, 'join']);
+	}
 
-    public function __destruct()
-    {
-        $this->join();
-    }
+	public function __destruct()
+	{
+		$this->join();
+	}
 
-    public function enqueue($url, $data=null, $headers=array())
-    {
-        $ch = curl_init();
+	public function enqueue($url, $data = null, $headers = [])
+	{
+		$ch = curl_init();
 
-        $new_headers = array();
-        foreach ($headers as $key => $value) {
-            array_push($new_headers, $key .': '. $value);
-        }
-        // XXX(dcramer): Prevent 100-continue response form server (Fixes GH-216)
-        $new_headers[] = 'Expect:';
+		$new_headers = [];
+		foreach ($headers as $key => $header) {
+			$new_headers[] = $key . ': ' . $header;
+		}
+		$new_headers[] = 'Expect: ';
 
-        curl_setopt($ch, CURLOPT_HTTPHEADER, $new_headers);
-        curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-        curl_setopt($ch, CURLOPT_URL, $url);
+		curl_setopt($ch, CURLOPT_HTTPHEADER, $new_headers);
+		curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+		curl_setopt($ch, CURLOPT_URL, $url);
+		curl_setopt($ch, CURLOPT_VERBOSE, true);
 
-        curl_setopt_array($ch, $this->options);
+		if (!empty($data)) {
+			curl_setopt($ch, CURLOPT_POST, true);
+			curl_setopt($ch, CURLOPT_POSTFIELDS, $data);
+		}
 
-        if (isset($data)) {
-            curl_setopt($ch, CURLOPT_POST, true);
-            curl_setopt($ch, CURLOPT_POSTFIELDS, $data);
-        }
+		//print_r(curl_exec($ch));
+		//curl_close($ch);
+		curl_multi_add_handle($this->multiHandle, $ch);
+		$fd = (int) $ch;
+		$this->requests[$fd] = 1;
+		$this->select();
 
-        curl_multi_add_handle($this->multi_handle, $ch);
+		return $fd;
+	}
 
-        $fd = (int)$ch;
-        $this->requests[$fd] = 1;
+	public function join()
+	{
+		$start = time();
+		do {
+			$this->select();
+			if (empty($this->requests)) {
+				break;
+			}
+			usleep(1000);
+		}  while ($this->joinTimeout !== 0 && time() - $start > $this->joinTimeout);
+	}
 
-        $this->select();
+	private function select()
+	{
+		do {
+			$mrc = curl_multi_exec($this->multiHandle, $active);
+		} while ($mrc == CURLM_CALL_MULTI_PERFORM);
 
-        return $fd;
-    }
+		while ($active && $mrc == CURLM_OK) {
+			if (curl_multi_select($this->multiHandle) !== -1) {
+				do {
+					$mrc = curl_multi_exec($this->multiHandle, $active);
+				} while ($mrc == CURLM_CALL_MULTI_PERFORM);
+			} else {
+				return;
+			}
+		}
 
-    public function join($timeout=null)
-    {
-        if (!isset($timeout)) {
-            $timeout = $this->join_timeout;
-        }
-        $start = time();
-        do {
-            $this->select();
-            if (count($this->requests) === 0) {
-                break;
-            }
-            usleep(10000);
-        } while ($timeout !== 0 && time() - $start > $timeout);
-    }
-
-    // http://se2.php.net/manual/en/function.curl-multi-exec.php
-    private function select()
-    {
-        do {
-            $mrc = curl_multi_exec($this->multi_handle, $active);
-        } while ($mrc == CURLM_CALL_MULTI_PERFORM);
-
-        while ($active && $mrc == CURLM_OK) {
-            if (curl_multi_select($this->multi_handle) !== -1) {
-                do {
-                    $mrc = curl_multi_exec($this->multi_handle, $active);
-                } while ($mrc == CURLM_CALL_MULTI_PERFORM);
-            } else {
-                return;
-            }
-        }
-
-        while ($info = curl_multi_info_read($this->multi_handle)) {
-            $ch = $info['handle'];
-            $fd = (int)$ch;
-
-            curl_multi_remove_handle($this->multi_handle, $ch);
-
-            if (!isset($this->requests[$fd])) {
-                return;
-            }
-
-            unset($this->requests[$fd]);
-        }
-    }
+		while ($info = curl_multi_info_read($this->multiHandle)) {
+			$ch = $info['handle'];
+			$fd = (int) $ch;
+			curl_multi_remove_handle($this->multiHandle, $ch);
+			if (!isset($this->requests[$fd])) {
+				return;
+			}
+			unset($this->requests[$fd]);
+		}
+	}
 }
