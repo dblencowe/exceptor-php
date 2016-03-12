@@ -4,8 +4,8 @@ class Exceptor_HandleError
 {
 	var $logger = "PHP";
 	var $apiVersion = 1;
-	var $oldErrorHandler = null;
-	var $oldExceptionHandler = null;
+	var $oldErrorHandler;
+	var $oldExceptionHandler;
 	var $callOldHandlers = true;
 
 	var $fullDSN = null;
@@ -35,15 +35,16 @@ class Exceptor_HandleError
 			throw new InvalidArgumentException('Invalid DSN supplied for Exceptor');
 		}
 
+		$this->registerHandlers();
+
 		$this->loggingServer = $parsedDSN['host'];
 		$this->publicKey = $parsedDSN['user'];
 		$this->privateKey = $parsedDSN['pass'];
 
 		$this->endpoint = sprintf('%s://%s%s', $parsedDSN['scheme'], $parsedDSN['host'], $parsedDSN['path']);
-		$this->registerHandlers();
 	}
 
-	public function handleException($e)
+	public function handleException($e, $isError = false)
 	{
 		// Init the cUrl handler
 		$this->curlHandler = new Exceptor_CurlHandler();
@@ -60,12 +61,25 @@ class Exceptor_HandleError
 			self::compileData(),
 			['Authorization' => self::createBasicAuthHeader()]
 		);
+
+		var_dump($isError, $this->callOldHandlers, $this->oldExceptionHandler);
+		if (!$isError && $this->callOldHandlers && $this->oldExceptionHandler) {
+			call_user_func($this->oldExceptionHandler, $e);
+		}
 	}
 
 	public function handleError($code, $message, $file = '', $line = 0, $context = array())
 	{
 		$e = new ErrorException($message, 0, $code, $file, $line);
 		$this->handleException($e, true, $context);
+
+		if ($this->callOldHandlers) {
+			if ($this->oldErrorHandler !== null) {
+				return call_user_func($this->oldErrorHandler, $code, $message, $file, $line, $context);
+			} else {
+				return false;
+			}
+		}
 	}
 
 	public function handleFatalError()
@@ -125,8 +139,8 @@ class Exceptor_HandleError
 
 	private function registerHandlers()
 	{
-		set_exception_handler(array($this, 'handleException'));
-		set_error_handler(array($this, 'handleError'), E_ALL);
+		$this->oldExceptionHandler = set_exception_handler(array($this, 'handleException'));
+		$this->oldErrorHandler = set_error_handler(array($this, 'handleError'), E_ALL);
 	}
 
 	private function createBasicAuthHeader()
