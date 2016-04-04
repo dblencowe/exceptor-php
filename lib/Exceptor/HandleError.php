@@ -21,6 +21,8 @@ class Exceptor_HandleError
 	var $cookieData = null;
 	var $trace = null;
 	var $message = null;
+  var $file = null;
+  var $line = null;
 
 	var $curlHandler = null;
 
@@ -39,7 +41,7 @@ class Exceptor_HandleError
 
 		$this->loggingServer = $parsedDSN['host'];
 		$this->publicKey = $parsedDSN['user'];
-		$this->privateKey = $parsedDSN['pass'];
+		$this->secretKey = $parsedDSN['pass'];
 
 		$this->endpoint = sprintf('%s://%s%s', $parsedDSN['scheme'], $parsedDSN['host'], $parsedDSN['path']);
 	}
@@ -56,13 +58,14 @@ class Exceptor_HandleError
 
 		$this->trace = $e->getTrace();
 		$this->message = $e->getMessage();
+    $this->file = $e->getFile();
+    $this->line = $e->getLine();
 
 		$this->curlHandler->enqueue($this->endpoint,
 			self::compileData(),
 			['Authorization' => self::createBasicAuthHeader()]
 		);
 
-		var_dump($isError, $this->callOldHandlers, $this->oldExceptionHandler);
 		if (!$isError && $this->callOldHandlers && $this->oldExceptionHandler) {
 			call_user_func($this->oldExceptionHandler, $e);
 		}
@@ -107,6 +110,8 @@ class Exceptor_HandleError
 			'handler' => $this->logger,
 			'trace' => json_encode($this->trace),
 			'message' => $this->message,
+      'file' => $this->file,
+      'line' => $this->line,
 		];
 
 		return $formattedData;
@@ -139,12 +144,12 @@ class Exceptor_HandleError
 
 	private function registerHandlers()
 	{
-		$this->oldExceptionHandler = set_exception_handler(array($this, 'handleException'));
 		$this->oldErrorHandler = set_error_handler(array($this, 'handleError'), E_ALL);
+    $this->oldExceptionHandler = set_exception_handler(array($this, 'handleException'));
 	}
 
 	private function createBasicAuthHeader()
 	{
-		return "Basic " . base64_encode($this->publicKey . ':' . $this->privateKey);
+		return "Basic " . base64_encode($this->publicKey . ':' . $this->secretKey);
 	}
 }
